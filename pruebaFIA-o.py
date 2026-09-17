@@ -5,7 +5,18 @@ import plotly.graph_objects as go
 import streamlit as st
 from openai import OpenAI
 
-st.set_page_config(page_title="DeepSeek vs OpenAI", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="DeepSeek vs OpenAI", page_icon="⚖️", layout="centered")
+
+st.markdown(
+    """
+    <style>
+    .block-container { max-width: 880px; }
+    h1, h2, h3 { text-align: center; }
+    div[data-testid="stMetricValue"] { font-size: 1.6rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Colores fijos por proveedor (orden categórico, nunca reasignado dinámicamente)
 COLOR_DEEPSEEK = "#2a78d6"
@@ -16,6 +27,8 @@ DEEPSEEK_INPUT_PRICE = 0.28
 DEEPSEEK_OUTPUT_PRICE = 0.42
 OPENAI_INPUT_PRICE = 0.15
 OPENAI_OUTPUT_PRICE = 0.60
+
+FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 
 
 @st.cache_resource
@@ -73,7 +86,12 @@ def run_provider(nombre, client, model, prompt, input_price, output_price):
 
 
 st.title("⚖️ Comparativa DeepSeek vs OpenAI")
-st.write("Escribe un prompt y compara la respuesta, el tiempo y el costo estimado de ambos modelos.")
+st.markdown(
+    "<p style='text-align:center; color:#52514e;'>"
+    "Escribe un prompt y compara la respuesta, el tiempo, el costo y los tokens de ambos modelos."
+    "</p>",
+    unsafe_allow_html=True,
+)
 
 openai_client, deepseek_client = get_clients()
 
@@ -83,7 +101,9 @@ prompt = st.text_area(
     placeholder="Ej: Explica en 3 puntos las ventajas de la criptografía post-cuántica.",
 )
 
-if st.button("Comparar modelos", type="primary", disabled=not prompt.strip()):
+run = st.button("Comparar modelos", type="primary", disabled=not prompt.strip(), use_container_width=True)
+
+if run:
     with st.spinner("Consultando DeepSeek y OpenAI..."):
         deepseek_result = run_provider(
             "DeepSeek", deepseek_client, "deepseek-chat", prompt,
@@ -94,13 +114,11 @@ if st.button("Comparar modelos", type="primary", disabled=not prompt.strip()):
             OPENAI_INPUT_PRICE, OPENAI_OUTPUT_PRICE,
         )
 
+    st.markdown("<h3>Respuestas</h3>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
-    for col, result, color in (
-        (col1, deepseek_result, COLOR_DEEPSEEK),
-        (col2, openai_result, COLOR_OPENAI),
-    ):
-        with col:
-            st.markdown(f"### :{'blue' if color == COLOR_DEEPSEEK else 'orange'}[{result['Proveedor']}]")
+    for col, result in ((col1, deepseek_result), (col2, openai_result)):
+        with col, st.container(border=True):
+            st.markdown(f"**{result['Proveedor']}**")
             if result["error"]:
                 st.error(f"No se pudo obtener respuesta: {result['error']}")
             else:
@@ -112,13 +130,12 @@ if st.button("Comparar modelos", type="primary", disabled=not prompt.strip()):
         st.warning("No se pudo comparar métricas porque al menos un proveedor falló.")
     else:
         df = pd.DataFrame(results).drop(columns=["Respuesta", "error"])
-
-        st.markdown("---")
-        st.subheader("📊 Métricas comparativas")
-
-        m1, m2, m3, m4 = st.columns(4)
         deepseek_row = df[df["Proveedor"] == "DeepSeek"].iloc[0]
         openai_row = df[df["Proveedor"] == "OpenAI"].iloc[0]
+
+        st.markdown("<h3>Métricas</h3>", unsafe_allow_html=True)
+
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Tiempo DeepSeek", f"{deepseek_row['Tiempo (s)']:.2f}s")
         m2.metric("Tiempo OpenAI", f"{openai_row['Tiempo (s)']:.2f}s")
         m3.metric("Costo DeepSeek", f"${deepseek_row['Costo (USD)']:.6f}")
@@ -126,73 +143,58 @@ if st.button("Comparar modelos", type="primary", disabled=not prompt.strip()):
 
         st.dataframe(df, hide_index=True, use_container_width=True)
 
-        chart_col1, chart_col2 = st.columns(2)
-
-        with chart_col1:
-            fig_tiempo = go.Figure(
-                go.Bar(
-                    x=df["Proveedor"],
-                    y=df["Tiempo (s)"],
-                    marker_color=[COLOR_DEEPSEEK, COLOR_OPENAI],
-                    text=df["Tiempo (s)"].round(2),
-                    textposition="outside",
-                )
-            )
-            fig_tiempo.update_layout(
-                title="Tiempo de respuesta (s)",
-                yaxis_title="Segundos",
-                showlegend=False,
-                bargap=0.5,
-                plot_bgcolor="#fcfcfb",
-                paper_bgcolor="#fcfcfb",
-                margin=dict(t=50, b=30),
-            )
-            st.plotly_chart(fig_tiempo, use_container_width=True)
-
-        with chart_col2:
-            fig_costo = go.Figure(
-                go.Bar(
-                    x=df["Proveedor"],
-                    y=df["Costo (USD)"],
-                    marker_color=[COLOR_DEEPSEEK, COLOR_OPENAI],
-                    text=df["Costo (USD)"].map(lambda v: f"${v:.6f}"),
-                    textposition="outside",
-                )
-            )
-            fig_costo.update_layout(
-                title="Costo estimado (USD)",
-                yaxis_title="USD",
-                showlegend=False,
-                bargap=0.5,
-                plot_bgcolor="#fcfcfb",
-                paper_bgcolor="#fcfcfb",
-                margin=dict(t=50, b=30),
-            )
-            st.plotly_chart(fig_costo, use_container_width=True)
+        st.markdown("<h3>Tokens por proveedor</h3>", unsafe_allow_html=True)
 
         fig_tokens = go.Figure()
         fig_tokens.add_trace(
-            go.Bar(name="Tokens entrada", x=df["Proveedor"], y=df["Tokens Entrada"], marker_color="#2a78d6")
+            go.Bar(
+                name="Tokens entrada",
+                x=df["Proveedor"],
+                y=df["Tokens Entrada"],
+                marker_color=COLOR_DEEPSEEK,
+                text=df["Tokens Entrada"],
+                textposition="outside",
+                cliponaxis=False,
+            )
         )
         fig_tokens.add_trace(
-            go.Bar(name="Tokens salida", x=df["Proveedor"], y=df["Tokens Salida"], marker_color="#eb6834")
+            go.Bar(
+                name="Tokens salida",
+                x=df["Proveedor"],
+                y=df["Tokens Salida"],
+                marker_color=COLOR_OPENAI,
+                text=df["Tokens Salida"],
+                textposition="outside",
+                cliponaxis=False,
+            )
         )
         fig_tokens.update_layout(
-            title="Tokens consumidos por proveedor",
-            yaxis_title="Tokens",
             barmode="group",
-            bargap=0.4,
+            bargap=0.35,
             plot_bgcolor="#fcfcfb",
             paper_bgcolor="#fcfcfb",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(t=70, b=30),
+            font=dict(family=FONT_FAMILY, size=13, color="#0b0b0b"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.1, xanchor="center", x=0.5),
+            margin=dict(t=60, b=20, l=10, r=10),
+            yaxis=dict(title="Tokens", gridcolor="#e1e0d9"),
+            xaxis=dict(title=None),
         )
         st.plotly_chart(fig_tokens, use_container_width=True)
 
         ratio_tiempo = openai_row["Tiempo (s)"] / deepseek_row["Tiempo (s)"]
-        ratio_costo = openai_row["Costo (USD)"] / deepseek_row["Costo (USD)"] if deepseek_row["Costo (USD)"] > 0 else float("nan")
+        ratio_costo = (
+            openai_row["Costo (USD)"] / deepseek_row["Costo (USD)"]
+            if deepseek_row["Costo (USD)"] > 0
+            else float("nan")
+        )
 
-        st.markdown("---")
-        st.subheader("🔎 Análisis")
-        st.write(f"- DeepSeek fue **{ratio_tiempo:.2f}x** más rápido que OpenAI en esta consulta.")
-        st.write(f"- DeepSeek costó **{ratio_costo:.2f}x** menos que OpenAI en esta consulta.")
+        st.markdown("<h3>Análisis</h3>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <p style='text-align:center;'>
+            DeepSeek fue <strong>{ratio_tiempo:.2f}x</strong> más rápido y costó
+            <strong>{ratio_costo:.2f}x</strong> menos que OpenAI en esta consulta.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
